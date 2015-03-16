@@ -1,0 +1,83 @@
+---
+title: "Grade Prediction"
+author: "Connor M"
+date: "March 15, 2015"
+output: html_document
+---
+
+```{r}
+rmse <- function(actual, predicted) {
+    sqrt((1 / length(predicted)) * sum((actual - predicted)^2))
+}
+
+error.cost <- function(actual, predicted) {
+    (1/(2*length(predicted)))*sum((actual - predicted)^2)
+}
+```
+
+```{r, message=FALSE}
+library(caret)
+set.seed(1234)
+
+all_data <- read.csv('data/student-mat.csv', 
+                     header = TRUE, 
+                     stringsAsFactors = TRUE, 
+                     sep = ";")
+
+train.index <- createDataPartition(all_data[,c("G3")], p = 0.6, list = FALSE)
+folds <- createFolds(all_data[-train.index, c("G3")], k = 2)
+
+train <- all_data[train.index,]
+cv <- all_data[folds$Fold1,]
+test <- all_data[folds$Fold2,]
+
+model <- lm(G3 ~ absences + G1 + G2 + romantic + famrel + age + Dalc*Walc + Medu + Fedu, data = train)
+summary(model)
+
+lm.predicted <- predict(model, test)
+lm.error <- rmse(test$G3, lm.predicted)
+
+print(lm.error)
+```
+
+```{r}
+library(e1071)
+
+svm.model <- svm(G3 ~ absences + G1 + G2 + romantic + famrel + age, data = train)
+svm.predicted <- predict(svm.model, test)
+
+svm.error <- rmse(test$G3, svm.predicted)
+
+print(svm.error)
+```
+
+```{r}
+library(reshape2)
+
+learning.curve <- function(train, cv) {
+    m <- nrow(train)
+    error.train = NULL
+    error.cv = NULL
+    
+    for (i in 4:m) {
+        subset <- train[1:i,]
+        
+        svm.model <- svm(G3 ~ absences + G1 + G2 + romantic + famrel + age + Dalc*Walc + Medu + Fedu, data = subset)
+
+        predicted.train <- predict(svm.model, subset)
+        predicted.cv <- predict(svm.model, cv)
+        
+        error.train = c(error.train, error.cost(subset$G3, predicted.train))
+        error.cv = c(error.cv, error.cost(cv$G3, predicted.cv))
+    }
+    
+    melt(data.frame(x = 4:m, train = error.train, cv = error.cv), id = "x", value.name = "Error", variable.name = "Type")
+}
+
+results <- learning.curve(train, cv)
+
+ggplot(results, aes(x = x, y = Error, color = Type)) +
+    geom_line() +
+    xlab("Training Set Size") +
+    ylab("Error")
+```
